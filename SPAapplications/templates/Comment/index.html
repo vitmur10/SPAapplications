@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+
+{% block name %}{{ post.title }}{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div>
+        {% if post %}
+        {% for a in post %}
+        <h2>
+            <a href="{% url 'Comments:post_detail' a.id %}">{{ a.title }}</a>
+        </h2>
+                    <p class="date">
+                        Published {{ a.publish }} by {{ a.author }}
+                    </p>
+        {{ a.body|truncatewords:30|linebreaks }}
+        {% endfor %}
+
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

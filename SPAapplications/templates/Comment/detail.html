@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block name %}{{ post.title }}{% endblock %}
+
+{% block content %}
+
+<h2>{{post.title}}</h2>
+
+<p>{{post.author}}</p>
+<p>{{post.body}}</p>
+<em>{{post.pub_date}}</em>
+
+
+<hr>
+
+{% if latest_comment_list %}
+{% for c in latest_comment_list %}
+<hr>
+<strong>Ім'я користувача {{c.name_user}}</strong>
+<p>Коментарій {{c.text_comment}}</p>
+<p>Дата коментарія {{c.date_comment}}</p>
+
+{% endfor %}
+{% else %}
+Коментарії не знайдені
+{% endif %}
+
+
+
+<form action="{% url 'Comments:leave_comment' post.id %}" method="POST">
+
+    {% csrf_token %}
+    <label for="user_name">Ім'я:</label><br>
+    <input type="text" id="user_name" name="user_name"><br>
+    <label for="email">Email:</label><br>
+    <input type="email" id="email" name="email"><br>
+    <label for="captcha">CAPTCHA:</label><br>
+    <img src="{% url 'Comments:get_captcha' %}" alt="CAPTCHA"><br>
+    <input type="text" id="captcha" name="captcha"><br>
+    <label for="text">Текст коментаря:</label><br>
+    <textarea id="text" name="text"></textarea><br>
+    <label for="file">Файл:</label><br>
+    <input type="file" id="file" name="file"><br>
+    <label for="photo">Фото:</label><br>
+    <input type="file" id="photo" name="photo"><br>
+    <button class="files_btn" data-astro-cid-xb3inwvi>Відправити</button>
+</form>
+
+
+</form>
+                <div class="pagination">
+                    <a href="?page={{ previous_page }}" :class="{ disabled: !previous_page }">Попередня сторінка</a>
+                    <span>Страница {{ page }} из {{ total_pages }}</span>
+                    <a href="?page={{ next_page }}" :class="{ disabled: !next_page }">Наступна сторінка</a>
+                </div>
+{% endblock %}
