@@ -4,31 +4,92 @@
 
 {% block content %}
 
-<h2>{{post.title}}</h2>
+<h2>{{ post.title }}</h2>
 
-<p>{{post.author}}</p>
-<p>{{post.body}}</p>
-<em>{{post.pub_date}}</em>
+<p>{{ post.author }}</p>
+<p>{{ post.body }}</p>
+<em>{{ post.pub_date }}</em>
 
 
 <hr>
 
-{% if latest_comment_list %}
-{% for c in latest_comment_list %}
-<hr>
-<strong>Ім'я користувача {{c.name_user}}</strong>
-<p>Коментарій {{c.text_comment}}</p>
-<p>Дата коментарія {{c.date_comment}}</p>
-
-{% endfor %}
+{% if parent_comments %}
+    <ul class="comments-list">
+        {% for comment in parent_comments %}
+            <li class="comment">
+                <div class="comment-header">
+                    <strong>Ім'я користувача: {{ comment.user_name }}</strong>
+                    <p>Дата коментарія: {{ comment.created_at }}</p>
+                </div>
+                <div class="comment-body">
+                    <p>{{ comment.text }}</p>
+                </div>
+                <button class="reply-btn" onclick="toggleForm({{ comment.id }})">Відповісти</button>
+                <div id="replyForm{{ comment.id }}" style="display: none;">
+                    <form action="{% url 'Comments:leave_comment' post.id %}" method="POST">
+                        {% csrf_token %}
+                        <input type="hidden" name="parent_comment" value="{{ comment.id }}">
+                        <label for="user_name">Ім'я:</label><br>
+                        <input type="text" id="user_name" name="user_name"><br>
+                        <label for="email">Email:</label><br>
+                        <input type="email" id="email" name="email"><br>
+                        <label for="captcha">CAPTCHA:</label><br>
+                        <img src="{% url 'Comments:get_captcha' %}" alt="CAPTCHA"><br>
+                        <input type="text" id="captcha" name="captcha"><br>
+                        <label for="text">Текст відповіді:</label><br>
+                        <textarea id="text" name="text"></textarea><br>
+                        <label for="file">Файл:</label><br>
+                        <input type="file" id="file" name="file"><br>
+                        <label for="photo">Фото:</label><br>
+                        <input type="file" id="photo" name="photo"><br>
+                        <button class="files_btn" data-astro-cid-xb3inwvi>Відправити відповідь</button>
+                    </form>
+                </div>
+                <!-- Відображення дочірніх коментарів -->
+                {% if comment.children_comments %}
+                    <ul class="replies-list">
+                        {% for child_comment in comment.children_comments %}
+                            <li class="comment">
+                                <div class="comment-header">
+                                    <strong>Ім'я користувача: {{ child_comment.user_name }}</strong>
+                                    <p>Дата коментарія: {{ child_comment.created_at }}</p>
+                                </div>
+                                <div class="comment-body">
+                                    <p>{{ child_comment.text }}</p>
+                                </div>
+                                <button class="reply-btn" onclick="toggleForm({{ child_comment.id }})">Відповісти</button>
+                                <div id="replyForm{{ child_comment.id }}" style="display: none;">
+                                    <form action="{% url 'Comments:leave_comment' post.id %}" method="POST">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="parent_comment" value="{{ child_comment.id }}">
+                                        <label for="user_name">Ім'я:</label><br>
+                                        <input type="text" id="user_name" name="user_name"><br>
+                                        <label for="email">Email:</label><br>
+                                        <input type="email" id="email" name="email"><br>
+                                        <label for="captcha">CAPTCHA:</label><br>
+                                        <img src="{% url 'Comments:get_captcha' %}" alt="CAPTCHA"><br>
+                                        <input type="text" id="captcha" name="captcha"><br>
+                                        <label for="text">Текст відповіді:</label><br>
+                                        <textarea id="text" name="text"></textarea><br>
+                                        <label for="file">Файл:</label><br>
+                                        <input type="file" id="file" name="file"><br>
+                                        <label for="photo">Фото:</label><br>
+                                        <input type="file" id="photo" name="photo"><br>
+                                        <button class="files_btn" data-astro-cid-xb3inwvi>Відправити відповідь</button>
+                                    </form>
+                                </div>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
 {% else %}
-Коментарії не знайдені
+    <p>Коментарії не знайдені</p>
 {% endif %}
 
-
-
 <form action="{% url 'Comments:leave_comment' post.id %}" method="POST">
-
     {% csrf_token %}
     <label for="user_name">Ім'я:</label><br>
     <input type="text" id="user_name" name="user_name"><br>
@@ -46,11 +107,22 @@
     <button class="files_btn" data-astro-cid-xb3inwvi>Відправити</button>
 </form>
 
+<div class="pagination">
+    <a href="?page={{ previous_page }}" :class="{ disabled: !previous_page }">Попередня сторінка</a>
+    <span>Страница {{ page }} из {{ total_pages }}</span>
+    <a href="?page={{ next_page }}" :class="{ disabled: !next_page }">Наступна сторінка</a>
+</div>
 
-</form>
-                <div class="pagination">
-                    <a href="?page={{ previous_page }}" :class="{ disabled: !previous_page }">Попередня сторінка</a>
-                    <span>Страница {{ page }} из {{ total_pages }}</span>
-                    <a href="?page={{ next_page }}" :class="{ disabled: !next_page }">Наступна сторінка</a>
-                </div>
+<script>
+    function toggleForm(commentId) {
+        var x = document.getElementById("replyForm" + commentId);
+        if (x.style.display === "none") {
+            x.style.display = "block";
+        } else {
+            x.style.display = "none";
+        }
+    }
+</script>
+
 {% endblock %}
+

@@ -2,14 +2,15 @@ import random
 from io import BytesIO
 from tkinter import Image
 from xml import etree
-
+from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from bleach import clean
 from captcha.image import ImageCaptcha
 from django.conf import settings
+from rest_framework import pagination
 from django.core.files.uploadedfile import InMemoryUploadedFile
-from django.http import HttpResponse
+from django.http import HttpResponse, HttpResponseBadRequest
 from django.http import JsonResponse, HttpResponseRedirect, Http404
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from django.urls import reverse
 from django.views import View
 
@@ -23,13 +24,42 @@ class PostListView(View):
         return render(request, 'Comment/index.html', {'post': post})
 
 
+def get_comments_tree(comments):
+    comments_dict = {}
+    parent_comments = []
+
+    for comment in comments:
+        if comment.parent_comment:
+            comments_dict.setdefault(comment.parent_comment_id, []).append(comment)
+        else:
+            parent_comments.append(comment)
+
+    for parent_comment in parent_comments:
+        parent_comment.children_comments = comments_dict.get(parent_comment.id, [])
+
+    return parent_comments
+
+
 class PostDetailView(View):
     def get(self, request, post_id):
-        post = Post.objects.get(id=post_id)
-        latest_comment_list = post.comment_set.order_by('-id')[:25]
+        post = get_object_or_404(Post, id=post_id)
+        comments = Comment.objects.filter(post=post).order_by('-created_at')
+        parent_comments = get_comments_tree(comments)
+
+        paginator = Paginator(parent_comments, 25)  # 25 коментарів на сторінку
+        page_number = request.GET.get('page')
+        try:
+            page = paginator.page(page_number)
+        except PageNotAnInteger:
+            page = paginator.page(1)
+        except EmptyPage:
+            page = paginator.page(paginator.num_pages)
+
         return render(request, 'Comment/detail.html', {
             'post': post,
-            'latest_comment_list': latest_comment_list
+            'parent_comments': page,
+            'page': page,
+            'total_pages': paginator.num_pages,
         })
 
 
@@ -63,77 +93,62 @@ BLEACH_ALLOWED_ATTRIBUTES = settings.BLEACH_ALLOWED_ATTRIBUTES
 
 
 def leave_comment(request, post_id):
-    if request.POST.get('captcha') != request.session.get('expected_captcha', ''):
-        return HttpResponse("Вкажіть правильну капчу", status=400)
-    try:
-        post = Post.objects.get(id=post_id)
-    except:
-        raise Http404('Статья не знайдена')
-    user_name = request.POST.get('user_name')
-    email = request.POST.get('email')
-    text = request.POST.get('text')
+    if request.method == 'POST':
+        # Перевірка CAPTCHA
+        if request.POST.get('captcha') != request.session.get('expected_captcha', ''):
+            return HttpResponseBadRequest("Вкажіть правильну CAPTCHA")
 
-    id_parent = request.POST.get('parent_comment')
-    parent_comment = Comment.objects.get(id=id_parent) if id_parent else None
-    try:
-        file_image = request.POST.get('photo')
-        if file_image:
+        # Отримання даних з POST-запиту
+        user_name = request.POST.get('user_name')
+        email = request.POST.get('email')
+        text = request.POST.get('text')
+        photo = request.FILES.get('photo')
+        file = request.FILES.get('file')
+        parent_id = request.POST.get('parent_comment')
+
+        # Отримання або створення поста
+        post = get_object_or_404(Post, id=post_id)
+
+        # Отримання або створення батьківського коментаря
+        parent_comment = get_object_or_404(Comment, id=parent_id) if parent_id else None
+        # Обробка фото, якщо воно було завантажено
+        if photo:
+            # Валідація формату фото
             formats_valid = ['image/jpeg', 'image/png', 'image/gif']
-            if file_image.content_type not in formats_valid:
-                return JsonResponse({'success': False, 'message': 'Недоступний формат заображення'}, status=400)
+            if photo.content_type not in formats_valid:
+                return JsonResponse({'success': False, 'message': 'Недоступний формат зображення'}, status=400)
 
-            img = Image.open(file_image)
+            # Обробка фото для зменшення розміру
+            img = Image.open(photo)
             width, height = img.size
             max_size = (320, 240)
             if width > max_size[0] or height > max_size[1]:
                 img = img.resize(max_size)
                 output_buffer = BytesIO()
-                img.save(output_buffer, format=file_image.content_type.split('/')[-1].upper())
+                img.save(output_buffer, format=photo.content_type.split('/')[-1].upper())
+                photo = output_buffer
 
-                file_image = InMemoryUploadedFile(output_buffer,
-                                                  'ImageField', f"{file_image.name}",
-                                                  file_image.content_type, output_buffer.tell, None)
-            comment.text = file_image
-    except Exception as e:
-        print(e)
-    # Обработка текстового файла
-    try:
-        file_tmp_file = request.POST.get('file')
-        if file_tmp_file:
-            if not file_tmp_file.name.endswith('.txt'):
+        # Обробка текстового файлу, якщо він був завантажений
+        if file:
+            # Валідація формату файлу
+            if not file.name.endswith('.txt'):
                 return JsonResponse(
-                    {'success': False, 'message': 'Недопустимый формат файла. Разрешены только .txt файлы.'},
+                    {'success': False, 'message': 'Недопустимий формат файлу. Дозволені лише .txt файли.'},
                     status=400)
-            if file_tmp_file.size > 102400:
-                return JsonResponse({'success': False, 'message': 'Файл слишком большой'}, status=400)
+            # Валідація розміру файлу
+            if file.size > 102400:
+                return JsonResponse({'success': False, 'message': 'Файл занадто великий'}, status=400)
 
-            comment.text_file = file_tmp_file
-            new_name = comment.text_file.name.split('/')[-1]
-            comment.text_file.name = new_name
-    except Exception as e:
-        print(f"Ошибка при сохранении файла: {e}")
+        # Створення об'єкта клієнтської інформації
+        client_info = ClientInfo.objects.create(ip_address=request.META.get('REMOTE_ADDR'), user_name=user_name,
+                                                user_agent=request.META.get('HTTP_USER_AGENT', ''))
 
-    post.comment_set.create(user_name=user_name, email=email, text=text, file=file, photo=photo,
-                            post=post, parent_comment=parent_comment)
-    return HttpResponseRedirect(reverse('Comments:post_detail', args=(post.id,)))
+        # Створення коментаря для поста
+        post.comment_set.create(user_name=user_name, email=email, text=text, text_file=file, image=photo,
+                                post=post, parent_comment=parent_comment, client_info=client_info)
 
-
-class CommentAddView(View):
-    serializer = ClientInfoSerializer(data={
-        'id_address': request.META.get('REMOTE_ADDR'),
-        'username': comment.user.username,
-        'user_agent': str(comment.user.user_agent)
-    })
-
-    if serializer.is_valid():
-        comment.client_info = serializer.save()
-
-    comment.text = clean(comment.text, tafs=BLEACH_ALLOWED_TAGS, attributes=BLEACH_ALLOWED_ATTRIBUTES)
-
-    if not validate_xhtml(comment.text):
-        return HttpResponse("Вкажіть правильну капчу", status=400)
-
-else:
-return HttpResponse(
-    "Помилка введених даних. Будь ласка, перевірте правильність введених даних і спробуйте ще раз.",
-    status=400)
+        # Перенаправлення на сторінку деталей поста
+        return HttpResponseRedirect(reverse('Comments:post_detail', args=(post.id,)))
+    else:
+        # Якщо метод запиту не є POST
+        return HttpResponseBadRequest("Неприпустимий метод запиту")
